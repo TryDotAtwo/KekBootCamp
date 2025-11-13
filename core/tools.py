@@ -1,30 +1,48 @@
 import base64
 import mimetypes
 import os
+import requests
+from bs4 import BeautifulSoup
 from pathlib import Path
 from typing import Annotated, Optional
-
-from dotenv import load_dotenv
 from e2b_code_interpreter import Execution, Sandbox
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage
-from core.llm_connector import get_llm_client
 from langchain_tavily import TavilySearch
 from pydantic import Field
 from langchain_openai import ChatOpenAI
 
 
-load_dotenv()
+def web_search(mode: str = 'simple') -> TavilySearch:
+    """Returnes tavily search object to find info"""
+    if mode == 'simple':
+        return TavilySearch(
+            max_results=2,
+            search_depth="basic",
+            include_answer=True,
+            include_raw_content=False,
+            include_images=False,
+        )
+    else:
+        return TavilySearch(
+            max_results=4,
+            search_depth="advanced",
+            include_answer=True,
+            include_raw_content=False,
+            include_images=False,
+        )
 
-tavily_search = TavilySearch(
-    max_results=3,
-    search_depth="advanced",
-    include_answer=True,
-    include_raw_content=False,
-    include_images=False,
-)
 
-web_search = tavily_search
+@tool
+def browse_page(url: str) -> str:
+    """Parses html pages and returnes first 2000 symbols of text"""
+    try:
+        response = requests.get(url, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        text = soup.get_text()[:2000]
+        return text
+    except Exception as e:
+        return "Error fetching page."
 
 
 _sandbox_instances: dict[str, Sandbox] = {}
@@ -53,7 +71,7 @@ def get_sandbox(sandbox_id: Optional[str] = None) -> Sandbox:
 
 
 @tool
-def e2b_run_code(
+def code_execution(
     code_block: Annotated[str, Field(description="The Python code to execute")],
     sandbox_id: Annotated[
         Optional[str],

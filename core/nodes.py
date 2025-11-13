@@ -1,19 +1,12 @@
+from functools import partial
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from core.state import State
-from core.prompts import (
-    planner_system_prompt,
-    summary_system_prompt,
-    supervisor_system_prompt,
-    validator_system_prompt,
-)
-from core.tools import web_search, describe_image, e2b_run_code
+from core.system_prompts import SIMPLE_PROMPTS, PRO_PROMTS
+from core.tools import web_search, describe_image, code_execution, browse_page
 from typing import Dict, List, Any
-import os
 
-
-TOOLS = [web_search, describe_image, e2b_run_code]
 
 def _ensure_defaults(state: Dict[str, Any]) -> State:
     return {
@@ -29,8 +22,10 @@ def _ensure_defaults(state: Dict[str, Any]) -> State:
 
 
 def planner_node(llm: ChatOpenAI, state: State) -> Dict[str, Any]:
-    sys = SystemMessage(content=planner_system_prompt)
-    res = llm.invoke([sys] + state["messages"])
+    prompt = SIMPLE_PROMPTS.PLANNER.value if state.get("mode", "simple") == "simple" else PRO_PROMTS.PLANNER.value
+    
+    msg = SystemMessage(content=prompt)
+    res = llm.invoke([msg] + state["messages"])
     steps = [s.strip("- •").strip() for s in (res.content or "").split("\n") if s.strip()]
 
     new_state = dict(state)
@@ -38,12 +33,13 @@ def planner_node(llm: ChatOpenAI, state: State) -> Dict[str, Any]:
     new_state["plan"] = steps[:8] or None
     if state.get('print_to', False):
         state['print_to'].update(label=f'📔 Планировщик предложил следующие шаги: {new_state.get('plan', "Empty plan")}', state='running')
-    
-    #print("\n--- PLANNER ---\n", steps[:8] or None)
 
     return _ensure_defaults(new_state)
 
+
 def supervisor_node(llm: ChatOpenAI, state: State) -> Dict[str, Any]:
+    prompt = SIMPLE_PROMPTS.SUPERVISOR.value if state.get("mode", "simple") == "simple" else PRO_PROMTS.SUPERVISOR.value
+    
     def serialize_messages(messages: List[BaseMessage]):
         role_map = {"human": "user", "ai": "assistant", "system": "system"}
         serialized = []
@@ -54,8 +50,9 @@ def supervisor_node(llm: ChatOpenAI, state: State) -> Dict[str, Any]:
 
     base_msgs = state["messages"][:2]
     
+    TOOLS = [web_search(state.get('mode', 'simple')), describe_image, code_execution, browse_page]
     supervisor_agent_graph = create_agent(
-        model=llm, tools=TOOLS, system_prompt=supervisor_system_prompt, # debug=True
+        model=llm, tools=TOOLS, system_prompt=prompt
     )
     result = supervisor_agent_graph.invoke({"messages": serialize_messages(base_msgs)})
     draft = result["messages"][-1].content
@@ -67,13 +64,14 @@ def supervisor_node(llm: ChatOpenAI, state: State) -> Dict[str, Any]:
     if state.get('print_to', False):
         state['print_to'].update(label=f'🔍 Супервизор нашел: {new_state.get('draft', "Empty draft")}', state='running')
     
-    #print("\n--- SUPERVISOR ---\n", draft)
-    
     return _ensure_defaults(new_state)
 
+
 def validator_node(llm: ChatOpenAI, state: State) -> Dict[str, Any]:
+    prompt = SIMPLE_PROMPTS.VALIDATOR.value if state.get("mode", "simple") == "simple" else PRO_PROMTS.VALIDATOR.value
+    
     draft = state.get("draft") or ""
-    sys = SystemMessage(content=validator_system_prompt)
+    sys = SystemMessage(content=prompt)
     res = llm.invoke([sys, HumanMessage(content=draft)])
     valid = "true" in (res.content or "").lower()
 
@@ -93,8 +91,10 @@ def validator_node(llm: ChatOpenAI, state: State) -> Dict[str, Any]:
     return _ensure_defaults(new_state)
 
 def summarizer_node(llm: ChatOpenAI, state: State) -> Dict[str, Any]:
+    prompt = SIMPLE_PROMPTS.SUMMARIZER.value if state.get("mode", "simple") == "simple" else PRO_PROMTS.SUMMARIZER.value
+    
     history = str(state["messages"])
-    sys = SystemMessage(content=summary_system_prompt.format(history=history))
+    sys = SystemMessage(content=prompt.format(history=history))
     res = llm.invoke([sys])
 
     new_state = dict(state)
