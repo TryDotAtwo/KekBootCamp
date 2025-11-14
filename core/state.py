@@ -11,3 +11,4 @@ class State(TypedDict, total=False):
     validation_fail_count: int
     mode: str
     print_to: Optional[Any]
+    thoughts: List[str]

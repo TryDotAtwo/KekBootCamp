@@ -131,15 +131,10 @@ class ResearchAssistantUI:
             with st.chat_message(msg['role']):
                 st.markdown(msg["content"], unsafe_allow_html=True)
                 
-                # if msg.get("sources"):
-                #     with st.expander("Источники & Детали", expanded=False):
-                #         for i, src in enumerate(msg["sources"][:5], 1):
-                #             st.markdown(f"{i}. <a href='{src}' target='_blank' class='source-link'>{src}</a>", unsafe_allow_html=True)
-                        
-                #         if msg.get("mode") == Mode.PRO.value and msg.get("reasoning"):
-                #             st.subheader("Шаги рассуждений")
-                #             for step in msg["reasoning"]:
-                #                 st.markdown(step, unsafe_allow_html=True)
+                if msg.get("mode") == "pro":
+                    with st.expander("Детали анализа:", expanded=False):
+                        for step in msg["thoughts"]:
+                            st.markdown(step, unsafe_allow_html=True)
 
     def run(self):
         st.title(f"{self.icon} {self.title}")
@@ -169,6 +164,7 @@ class ResearchAssistantUI:
                 "validation_fail_count": 0,
                 "mode": st.session_state.selected_mode,
                 "print_to": None,
+                "thoughts": []
             }
             user_msg = {"role": "user", "content": prompt}
             st.session_state.messages.append(user_msg)
@@ -189,6 +185,8 @@ class ResearchAssistantUI:
                 response_msg = {
                     "role": "assistant",
                     "content": res.get('summary', 'Empty string'),
+                    "mode": res.get('mode'),
+                    "thoughts": res.get("thoughts")
                 #     "sources": res.sources,
                 #     "mode": res.mode,
                 }

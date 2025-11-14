@@ -2,6 +2,7 @@ import base64
 import mimetypes
 import os
 import requests
+import arxiv
 from bs4 import BeautifulSoup
 from pathlib import Path
 from typing import Annotated, Optional
@@ -17,7 +18,7 @@ def web_search(mode: str = 'simple') -> TavilySearch:
     """Returnes tavily search object to find info"""
     if mode == 'simple':
         return TavilySearch(
-            max_results=2,
+            max_results=1,
             search_depth="basic",
             include_answer=True,
             include_raw_content=False,
@@ -25,7 +26,7 @@ def web_search(mode: str = 'simple') -> TavilySearch:
         )
     else:
         return TavilySearch(
-            max_results=4,
+            max_results=3,
             search_depth="advanced",
             include_answer=True,
             include_raw_content=False,
@@ -35,7 +36,14 @@ def web_search(mode: str = 'simple') -> TavilySearch:
 
 @tool
 def browse_page(url: str) -> str:
-    """Parses html pages and returnes first 2000 symbols of text"""
+    """Parses html pages and returnes first 2000 symbols of text
+    
+    Args:
+        url (str): url adress to remote resource which should be parsed
+    
+    Returns:
+        str: text from resource page which should be processed
+    """
     try:
         response = requests.get(url, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -43,6 +51,49 @@ def browse_page(url: str) -> str:
         return text
     except Exception as e:
         return "Error fetching page."
+
+
+@tool
+def arxiv_search(query: str) -> str:
+    """Function for searching articles in arxiv
+
+    Args:
+        query (str): topic or name of article which should be searched
+
+    Returns:
+        str: string of prepared text.
+    """
+    client = arxiv.Client()
+    search = arxiv.Search(
+        query = query,
+        max_results = 5,
+        sort_by = arxiv.SortCriterion.SubmittedDate
+    )
+    
+    results = []
+    for result in client.results(search):
+        entry = (
+            f"Title: {result.title}\n"
+            f"Authors: {', '.join(author.name for author in result.authors)}\n"
+            f"Submitted: {result.published.strftime('%Y-%m-%d')}\n"
+            f"Summary: {result.summary.strip()}\n"
+            f"PDF: {result.pdf_url}\n"
+            f"{'-'*60}"
+        )
+        results.append(entry)
+
+    full_text = '\n\n'.join(results)
+    
+    # Обрезаем до 2000 символов, стараясь не резать слова
+    if len(full_text) > 2000:
+        full_text = full_text[:2000]
+        # Находим последний пробел или перенос строки
+        cut_off = max(full_text.rfind('\n'), full_text.rfind(' '))
+        if cut_off > 1800:  # если нашли подходящее место
+            full_text = full_text[:cut_off] + "\n\n... (truncated)"
+    
+    return full_text
+    #return '\n\n'.join(list(client.results(search)))[:2000]
 
 
 _sandbox_instances: dict[str, Sandbox] = {}
